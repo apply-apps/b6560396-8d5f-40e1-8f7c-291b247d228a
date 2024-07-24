@@ -1,114 +1,201 @@
 // Filename: index.js
 // Combined code from all files
 
-import React, { useEffect, useState } from 'react';
-import {
-    StyleSheet,
-    Text,
-    SafeAreaView,
-    ScrollView,
-    ActivityIndicator,
-    View,
-    Image,
-    FlatList
-} from 'react-native';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback } from 'react';
+import { SafeAreaView, StyleSheet, View, TouchableOpacity, Text, Dimensions } from 'react-native';
 
-const FoodList = () => {
-    const [foods, setFoods] = useState([]);
-    const [loading, setLoading] = useState(true);
+const { width, height } = Dimensions.get('screen');
+const blockSize = 20;
+const initialSnake = [{ x: width / 2, y: width / 2 }];
+const initialFood = { x: getRandomCoordinate(width), y: getRandomCoordinate(width) };
 
-    useEffect(() => {
-        const fetchFoods = async () => {
-            try {
-                const response = await axios.get('https://apihub.p.appply.xyz:3300/chatgpt', {
-                    data: {
-                        messages: [
-                            { role: "user", content: "Provide a list of food items for an online food delivery app." },
-                        ],
-                        model: "gpt-4o"
-                    }
-                });
-                setFoods(JSON.parse(response.data.response));
-            } catch (error) {
-                console.error('Error fetching data:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchFoods();
-    }, []);
-
-    if (loading) {
-        return (
-            <View style={styles.loading}>
-                <ActivityIndicator size="large" color="#0000ff" />
-            </View>
-        );
-    }
-
-    const renderItem = ({ item }) => (
-        <View style={styles.foodContainer}>
-            <Image source={{ uri: `https://picsum.photos/200/200?random=${item.id}` }} style={styles.image} />
-            <Text style={styles.foodName}>{item.name}</Text>
-        </View>
-    );
-
-    return (
-        <FlatList
-            data={foods}
-            renderItem={renderItem}
-            keyExtractor={(item) => item.id.toString()}
-            contentContainerStyle={styles.list}
-        />
-    );
+const directions = {
+    up: { x: 0, y: -blockSize },
+    down: { x: 0, y: blockSize },
+    left: { x: -blockSize, y: 0 },
+    right: { x: blockSize, y: 0 },
 };
 
-const styles = StyleSheet.create({
-    list: {
-        alignItems: 'center',
-    },
-    foodContainer: {
-        margin: 10,
-        alignItems: 'center',
-    },
-    image: {
-        width: 200,
-        height: 200,
-        borderRadius: 10,
-    },
-    foodName: {
-        marginTop: 10,
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    loading: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    container: {
-        flex: 1,
-        marginTop: 30,
-        paddingHorizontal: 20,
-        backgroundColor: '#fff',
-    },
-    title: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        marginVertical: 20,
-        textAlign: 'center',
-    },
-});
+const getRandomCoordinate = (max) => {
+    return Math.floor((Math.random() * (max - blockSize)) / blockSize) * blockSize;
+};
 
 export default function App() {
+    const [snake, setSnake] = useState(initialSnake);
+    const [food, setFood] = useState(initialFood);
+    const [direction, setDirection] = useState(directions.right);
+    const [isGameOver, setIsGameOver] = useState(false);
+    const [intervalId, setIntervalId] = useState(null);
+
+    useEffect(() => {
+        const handleInterval = () => {
+            if (isGameOver) return clearInterval(intervalId);
+
+            moveSnake();
+        };
+
+        const id = setInterval(handleInterval, 200);
+        setIntervalId(id);
+        return () => clearInterval(id);
+    }, [snake, direction, isGameOver]);
+
+    const moveSnake = useCallback(() => {
+        const newHead = {
+            x: snake[0].x + direction.x,
+            y: snake[0].y + direction.y
+        };
+
+        if (
+            newHead.x < 0 ||
+            newHead.x >= width ||
+            newHead.y < 0 ||
+            newHead.y >= width ||
+            snake.some(segment => segment.x === newHead.x && segment.y === newHead.y)
+        ) {
+            setIsGameOver(true);
+            return;
+        }
+
+        let newSnake = [newHead, ...snake];
+
+        if (newHead.x === food.x && newHead.y === food.y) {
+            setFood({ x: getRandomCoordinate(width), y: getRandomCoordinate(width) });
+        } else {
+            newSnake.pop();
+        }
+
+        setSnake(newSnake);
+    }, [snake, direction, food]);
+
+    const handleDirectionChange = (newDirection) => {
+        if (
+            (direction.x + newDirection.x !== 0) ||
+            (direction.y + newDirection.y !== 0)
+        ) {
+            setDirection(newDirection);
+        }
+    };
+
+    const restartGame = () => {
+        setSnake(initialSnake);
+        setFood(initialFood);
+        setDirection(directions.right);
+        setIsGameOver(false);
+    };
+
     return (
         <SafeAreaView style={styles.container}>
-            <ScrollView>
-                <Text style={styles.title}>Online Food Delivery</Text>
-                <FoodList />
-            </ScrollView>
+            <Text style={styles.title}>Snake Game</Text>
+            <View style={styles.gameboard}>
+                {snake.map((segment, idx) => (
+                    <View key={idx} style={[styles.snakeSegment, { left: segment.x, top: segment.y }]} />
+                ))}
+                <View style={[styles.food, { left: food.x, top: food.y }]} />
+                {isGameOver && (
+                    <View style={styles.gameOverOverlay}>
+                        <Text style={styles.gameOverText}>Game Over</Text>
+                        <TouchableOpacity style={styles.restartButton} onPress={restartGame}>
+                            <Text style={styles.restartButtonText}>Restart</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
+            <View style={styles.controls}>
+                <View style={styles.row}>
+                    <TouchableOpacity style={styles.controlButton} onPress={() => handleDirectionChange(directions.up)}>
+                        <Text style={styles.controlButtonText}>↑</Text>
+                    </TouchableOpacity>
+                </View>
+                <View style={styles.row}>
+                    <TouchableOpacity style={styles.controlButton} onPress={() => handleDirectionChange(directions.left)}>
+                        <Text style={styles.controlButtonText}>←</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.controlButton} onPress={() => handleDirectionChange(directions.down)}>
+                        <Text style={styles.controlButtonText}>↓</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.controlButton} onPress={() => handleDirectionChange(directions.right)}>
+                        <Text style={styles.controlButtonText}>→</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
         </SafeAreaView>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#fff',
+        alignItems: 'center',
+    },
+    title: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        marginVertical: 30,
+    },
+    gameboard: {
+        width: width,
+        height: width,
+        backgroundColor: '#f0f0f0',
+        position: 'relative',
+    },
+    snakeSegment: {
+        position: 'absolute',
+        width: blockSize,
+        height: blockSize,
+        backgroundColor: 'green',
+    },
+    food: {
+        position: 'absolute',
+        width: blockSize,
+        height: blockSize,
+        backgroundColor: 'red',
+    },
+    controls: {
+        marginTop: 20,
+    },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginVertical: 10,
+    },
+    controlButton: {
+        width: 60,
+        height: 60,
+        backgroundColor: '#ccc',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginHorizontal: 10,
+        borderRadius: 30,
+    },
+    controlButtonText: {
+        fontSize: 32,
+        fontWeight: 'bold',
+    },
+    gameOverOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    gameOverText: {
+        fontSize: 48,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    restartButton: {
+        marginTop: 20,
+        backgroundColor: '#fff',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 5,
+    },
+    restartButtonText: {
+        fontSize: 24,
+        fontWeight: 'bold',
+    },
+});
